@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haiku Weather Dashboard</title>
+    <style>
+        /* CSS is unchanged */
+        :root { --text-color: #ffffff; --shadow-color: rgba(0, 0, 0, 0.5); --card-bg: rgba(255, 255, 255, 0.2); --card-border: rgba(255, 255, 255, 0.3); --box-bg: rgba(0, 0, 0, 0.15); }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px; color: var(--text-color); background-color: #333333; transition: background-color 2s ease; text-shadow: 1px 1px 3px var(--shadow-color); }
+        .weather-container { width: 100%; max-width: 1200px; margin: 0 auto; }
+        #message-area { text-align: center; font-size: 1.2rem; padding: 40px 20px; background-color: var(--card-bg); border-radius: 12px; }
+        #main-content { display: none; grid-template-areas: "main" "timeline"; gap: 40px; }
+        .current-weather-wrapper { grid-area: main; }
+        #dynamic-message { font-size: 1.3rem; font-style: italic; margin-bottom: 15px; min-height: 5em; line-height: 1.6; }
+        .current-weather { display: flex; align-items: center; gap: 20px; }
+        .temp-main { font-size: 6rem; font-weight: bold; line-height: 1; }
+        .details p { margin: 0; font-size: 1.2rem; line-height: 1.5; }
+        .details #weather-description { text-transform: capitalize; }
+        .timeline-container { grid-area: timeline; display: flex; flex-direction: column; gap: 15px; min-width: 0; }
+        .timeline-box { background: var(--box-bg); border-radius: 12px; padding: 20px; overflow-x: scroll; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+        .timeline-box h2 { margin-top: 0; margin-bottom: 15px; }
+        .timeline-box::-webkit-scrollbar { height: 8px; }
+        .timeline-box::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 4px; }
+        .timeline-box::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 4px; }
+        .timeline-content { display: flex; gap: 15px; }
+        .timeline-card { flex: 0 0 100px; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 15px; text-align: center; }
+        .timeline-card .time { font-weight: bold; font-size: 1.1rem; }
+        .timeline-card .icon { font-size: 2.5rem; margin: 10px 0; }
+        .timeline-card .temp { font-size: 1.2rem; }
+        @media (max-width: 768px) { body { padding: 10px; } .current-weather { flex-direction: column; align-items: flex-start; gap: 5px; } .temp-main { font-size: 5rem; } #dynamic-message { font-size: 1.1rem; } .timeline-card { flex-basis: 80px; } }
+    </style>
+</head>
+<body>
+    <div class="weather-container">
+        <div id="message-area">Checking location permission...</div>
+        <div id="main-content">
+            <div class="current-weather-wrapper">
+                <p id="dynamic-message"></p>
+                <div class="current-weather">
+                    <div id="temp-main" class="temp-main"></div>
+                    <div class="details">
+                        <p id="feels-like"></p>
+                        <p id="weather-description"></p>
+                    </div>
+                </div>
+            </div>
+            <div class="timeline-container">
+                <div class="timeline-box">
+                    <h2>Last 5 Hours</h2>
+                    <div id="history" class="timeline-content"></div>
+                </div>
+                <div class="timeline-box">
+                    <h2>Next 24 Hours</h2>
+                    <div id="forecast" class="timeline-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // MODIFICATION: The messages object is now formatted for readability.
+        const temperatureMessages = {
+            0: [
+                "Crystal breath hangs still / World is frozen, hard and white / Waiting for the sun.",
+                "Sharp wind bites the cheek / Bare trees shiver in the cold / Deep earth is asleep.",
+                "Windowpanes of frost / Intricate patterns of ice / Nature's cold art form.",
+                "Silent, snowy cloak / Covers all the sleeping world / Not a single sound.",
+                "Sunlight weak and pale / On a landscape carved from ice / Zero warmth to give.",
+                "The river stands still / A hard, glassy silver path / Winter's cold command.",
+                "Footsteps crunch on snow / Air so cold it hurts to breathe / Stars like diamond chips.",
+                "A frozen bird bath / Solid water, cold as stone / No small wings will splash.",
+                "Deep chill in the bones / A fire is a welcome friend / Stay inside and warm.",
+                "Black trees, stark and bare / Reaching up to a grey sky / A world drained of warmth.",
+                "The world holds its breath / In the stillness of the frost / Awaiting the thaw.",
+                "Icy fingers creep / Underneath the door and sill / Winter is the guest.",
+                "A single leaf caught / Trapped in ice upon the ground / Frozen in its fall.",
+                "Night falls, deep and cold / The moon is a silver coin / In a frozen sky.",
+                "A world locked in sleep / Underneath a sheet of ice / Waiting for the light."
+            ],
+            1: [
+                "First hint of the cold / A new sharpness in the air / Not yet winter's grip.",
+                "Frost just starts to form / A light dusting, soft and white / On the morning grass.",
+                "A deep breath of air / Chills the lungs, a gentle sting / The world is waking cold.",
+                "Grey clouds overhead / Promise of a colder day / A still, quiet chill.",
+                "Sweater feels so good / A warm cup held in the hands / A simple comfort.",
+                "The last hardy rose / Folds its petals from the frost / A final goodbye.",
+                "Puddles turn to glass / A thin, fragile sheet of ice / Breaks beneath a shoe.",
+                "The wind has a voice / A low whisper through the trees / Of the cold to come.",
+                "One degree of change / The difference between water / And the start of ice.",
+                "Early morning walk / The ground is hard beneath my feet / A sign of the frost.",
+                "A single bare branch / Tipped with silver in the dawn / A beautiful chill.",
+                "The garden slumbers / Tucked beneath a quilt of leaves / Waiting for the spring.",
+                "A faint, icy sheen / On the dark, metallic car / Winter's first attempt.",
+                "The air is so clear / Distant sounds travel so far / A cold, crisp new day.",
+                "A time to slow down / The world is getting ready / For its long, cold sleep."
+            ],
+            2: [
+                "A definite chill / The air is clean, sharp, and brisk / Autumn's final bow.",
+                "Two degrees of frost / The world has a silver coat / Worn for the morning.",
+                "Need a woolly hat / To protect the ears from bite / Of the morning air.",
+                "A strong, cold north wind / Scatters all the fallen leaves / Nature's busy broom.",
+                "The squirrels are frantic / Gathering their winter stores / They can feel the cold.",
+                "A thin layer of ice / On the bird bath, stronger now / A warning to wings.",
+                "The last of the warmth / Fades away with setting sun / Night brings a deep chill.",
+                "Geese fly in a 'V' / Heading south to warmer lands / They know what is next.",
+                "A satisfying crunch / As you walk across the lawn / Frozen blades of grass.",
+                "The smell of woodsmoke / Drifting from a chimney far / A sign of comfort.",
+                "A hardy robin / Puffs its feathers for the warmth / A small, brave red breast.",
+                "The world seems to pause / In the cold and quiet air / A moment of peace.",
+                "The dark, rich, wet earth / Hardens with the coming frost / A seasonal change.",
+                "A time for warm soup / And for pulling blankets close / As the evening falls.",
+                "The sky is a pale / And a very distant blue / A cold, clean canvas."
+            ],
+            3: [
+                "A crisp, perfect cold / Enough to make you feel alive / A day for a walk.",
+                "Rosy cheeks appear / On the faces of the young / Playing in the park.",
+                "The sun has some strength / But the air remains so cool / A delightful mix.",
+                "A thick, cozy scarf / Is a welcome, soft embrace / Against the cool breeze.",
+                "The last of the leaves / Cling with stubborn, fading grip / To their mother branch.",
+                "The world is painted / In the shades of brown and grey / Awaiting the white.",
+                "A brisk energy / Fills the air and fills the soul / A good day to move.",
+                "The lake is so still / Reflecting the empty trees / A perfect mirror.",
+                "A faint, distant sun / Tries its best to warm the land / A valiant effort.",
+                "You can see your breath / A small, fleeting, misty cloud / A simple magic.",
+                "The silence of cold / Broken by a lone bird's call / Clear and sharp and high.",
+                "The feel of the ground / Firm and solid underfoot / The frost is not deep.",
+                "A day for baking / Filling up the house with warmth / And the smell of spice.",
+                "The first thought of snow / A possibility that hangs / In the heavy clouds.",
+                "A sense of waiting / The world is poised on the edge / Of the winter deep."
+            ],
+            4: [
+                "A noticeable chill / But the sun still has a smile / A pleasant autumn.",
+                "The air is alive / With the scent of fallen leaves / And the damp, cool earth.",
+                "A day for layers / A t-shirt, a fleece, a coat / Ready for changes.",
+                "The last of the warmth / A gift from the afternoon / Before the cold night.",
+                "The sky is a bright / And a very hopeful blue / Despite the cool air.",
+                "A perfect day for / A long hike among the trees / In the quiet woods.",
+                "The wind is gentle / A cool caress on the skin / A soft, kind goodbye.",
+                "The colours of fall / Seem more vibrant in the cold / A final display.",
+                "A time for reflection / As the year begins to wane / And the world slows down.",
+                "A warm, welcome fire / Crackles in the hearth at night / A cozy refuge.",
+                "The last of the apples / Cling tightly to the bare branch / Sweet and crisp and cold.",
+                "The air is so fresh / It feels good to breathe it deep / A clean, cool feeling.",
+                "A lone, hardy bee / Makes a final, slow journey / From a fading flower.",
+                "The stars seem so close / In the clear and chilly night / A brilliant display.",
+                "The promise of rest / In the cool and quiet air / A time to be still."
+            ],
+            5: [
+                "Five degrees of cool / The edge of winter's sharp knife / Is felt in the breeze.",
+                "A day for a fleece / The sun's warmth is a memory / Fading in the sky.",
+                "The last garden herbs / Are touched by a gentle frost / Their green days are done.",
+                "A chill in the shade / A reminder that the sun / Is losing its power.",
+                "The world is subdued / The vibrant colours have gone / A calm, quiet mood.",
+                "A good day to work / In the yard, to rake the leaves / To prepare for frost.",
+                "The birds are all hushed / Save for the boldest of them / The small, hardy few.",
+                "The first hint of ice / In the puddles by the road / A sign of what's next.",
+                "The night comes so fast / Stealing all the daylight hours / Leaving us the cold.",
+                "A time for warm boots / And for thick and woolly socks / A comfort to feet.",
+                "The smell of the rain / Is different now, sharp and cold / A wintery scent.",
+                "The feel of the wind / Is a promise of the north / A cold, arctic breath.",
+                "A last, lonely kite / Struggles in the autumn wind / A dance of goodbye.",
+                "The moon seems brighter / In the cold and crystal air / A lantern of ice.",
+                "The world is prepared / For the long and silent sleep / The deep winter rest."
+            ],
+            6: [
+                "A cool, gentle day / The sun is a welcome friend / Though its warmth is weak.",
+                "The air is refreshing / A good day to clear the head / And to walk a while.",
+                "A light jacket's all / That you need to feel just right / In the cool, soft air.",
+                "The last of the flowers / A brave and a lonely few / Still face the cool sky.",
+                "The trees are now bare / Their intricate branches show / Against the grey clouds.",
+                "A calm, peaceful day / The world is taking a breath / Before winter comes.",
+                "The river flows slow / Its surface is dark and cold / Reflecting the grey.",
+                "A time for comfort / A warm drink and a good book / As the light does fade.",
+                "The squirrels are hiding / Their winter pantries are full / Their hard work is done.",
+                "The wind is a sigh / A soft and a mournful sound / Through the empty woods.",
+                "A lone, patient hawk / Circles in the cool, clear sky / Watching the still world.",
+                "The ground is now soft / From the cool and gentle rains / Of the autumn days.",
+                "A sense of closure / The year is coming to an end / A time to look back.",
+                "The stars are like sparks / Scattered on a velvet cloth / In the cool night sky.",
+                "The world is at peace / In the cool and gentle air / A quiet beauty."
+            ],
+            7: [
+                "A cool, pleasant breeze / Whispers secrets to the trees / Of the coming spring.",
+                "The first hint of green / A tiny, courageous shoot / Pushes through the soil.",
+                "The sun has a promise / Of the warmth that is to come / A gentle foretaste.",
+                "The birds start to sing / A hesitant, hopeful tune / In the morning light.",
+                "A light sweater is / All you need to feel the joy / Of a cool spring day.",
+                "The snow has all gone / Leaving damp and fertile earth / Ready for new life.",
+                "The streams start to flow / With the water from the melt / A joyful, free sound.",
+                "A time of renewal / The world is stretching its limbs / After a long sleep.",
+                "The air smells so sweet / Of the damp earth and new life / A scent of rebirth.",
+                "The first honeybee / Ventures out into the cool / A brave explorer.",
+                "The sky is a soft / And a very gentle blue / A canvas for spring.",
+                "A sense of new hope / In the cool and gentle air / A brand new beginning.",
+                "The first daffodils / Yellow trumpets, brave and bright / Announce the new year.",
+                "The days are now longer / Pushing back the dark and cold / Welcoming the light.",
+                "The world is waking / From its long and quiet dream / Into the cool sun."
+            ],
+            8: [
+                "A cool, perfect day / The sun is a gentle hand / Upon the cool earth.",
+                "The air is so clean / It feels good to fill your lungs / With the cool, fresh air.",
+                "No need for a coat / A simple long-sleeved shirt will do / In this pleasant air.",
+                "The world is in bloom / A riot of soft, new colour / A beautiful sight.",
+                "The trees are all dressed / In their finest, new green leaves / A celebration.",
+                "A day for a picnic / On a blanket in the park / In the cool sunshine.",
+                "The wind is a game / Tugging gently at your clothes / A playful spirit.",
+                "A time for new plans / The world is full of promise / And of new beginnings.",
+                "The smell of the blossoms / Fills the air with sweet perfume / A gift from the trees.",
+                "The bees are all busy / A low and a gentle hum / In the warm, cool air.",
+                "The sky is a clear / And a very hopeful blue / A perfect spring day.",
+                "A sense of pure joy / In the cool and pleasant air / A happy new day.",
+                "The world is alive / With the sound of happy birds / And the buzzing bees.",
+                "The sun on your face / A gentle and a welcome warmth / A perfect feeling.",
+                "A day to remember / A perfect and a cool day / A gift from the spring."
+            ],
+            9: [
+                "A cool morning dawns / But the promise of the warmth / Is in the bright sun.",
+                "The dew on the grass / Sparkles in the morning light / A field of diamonds.",
+                "A good day to start / The work in the garden now / The soil is ready.",
+                "The air is still cool / But the sun has a new strength / A growing power.",
+                "The last of the chill / Fades away as morning grows / Into a warm day.",
+                "The world is a mix / Of the cool shade and warm sun / A pleasant contrast.",
+                "The birds are in love / Their songs are a joyful sound / A celebration.",
+                "A time to be out / To enjoy the gentle warmth / Of the new season.",
+                "The flowers are open / Reaching for the welcome sun / A beautiful sight.",
+                "The first butterflies / A flicker of fragile wings / In the cool, warm air.",
+                "The sky is a deep / And a very vibrant blue / A perfect spring sky.",
+                "A sense of well-being / In the cool and warming air / A peaceful new day.",
+                "The world is in balance / The cool of the night is gone / The heat is not here.",
+                "A perfect moment / To sit and to feel the sun / And the cool, fresh breeze.",
+                "A day of contentment / A day of simple pleasure / A gift from the world."
+            ],
+            10: [
+                "A perfect ten degrees / The air is cool, the sun is warm / A day of pure bliss.",
+                "The world is awake / And is singing a new song / A song of new life.",
+                "You can feel the change / The last hint of winter's chill / Is finally gone.",
+                "A day for bare arms / To feel the sun on your skin / A welcome feeling.",
+                "The trees are a full / And a vibrant, happy green / A beautiful sight.",
+                "A day to explore / To wander and to get lost / In the gentle warmth.",
+                "The wind is a whisper / A soft and a gentle touch / A kind, friendly breeze.",
+                "A time of great hope / The world is a brand new page / Ready to be written.",
+                "The smell of the spring / Is a mix of green and sweet / A scent of new life.",
+                "The world is alive / With the flutter of new wings / And the buzz of bees.",
+                "The sky is a vast / And a very friendly blue / A welcoming sight.",
+                "A sense of pure peace / In the warm and gentle air / A perfect new day.",
+                "The world is a gift / A beautiful, perfect gift / On this lovely day.",
+                "The sun is a blessing / A warm and a gentle kiss / Upon the whole world.",
+                "A day to be grateful / For the simple, perfect things / Like this lovely day."
+            ],
+            11: [
+                "A cool, gentle warmth / The sun is a soft, warm hand / On the happy earth.",
+                "The air is so sweet / With the scent of blooming flowers / A fragrant new day.",
+                "A day for a t-shirt / To feel the warmth on your skin / A liberating feel.",
+                "The world is a green / And a very vibrant place / Full of new, fresh life.",
+                "The trees are a shelter / A cool and a shady place / From the gentle sun.",
+                "A day for a bike ride / To feel the wind in your hair / And the sun on your face.",
+                "The wind is a song / A happy and a joyful tune / A song of the spring.",
+                "A time for adventure / The world is a brand new map / Waiting to be read.",
+                "The smell of the earth / Is a rich and a fertile scent / A promise of growth.",
+                "The world is a dance / Of the bees and butterflies / A beautiful show.",
+                "The sky is a deep / And a very peaceful blue / A calming new sight.",
+                "A sense of pure bliss / In the warm and gentle air / A perfect new day.",
+                "The world is a poem / A beautiful, perfect poem / Written by the spring.",
+                "The sun is a painter / Painting the world with its light / A masterpiece made.",
+                "A day to be happy / To smile and to feel the joy / Of this perfect day."
+            ],
+            12: [
+                "A cool, pleasant warmth / The world is a comfortable / And a happy place.",
+                "The air is so fresh / It feels good to be alive / And to breathe it deep.",
+                "A day for bare feet / To feel the grass on your soles / A connection made.",
+                "The world is a garden / Full of new and growing things / A beautiful sight.",
+                "The trees are a haven / A cool and a peaceful place / To rest and to dream.",
+                "A day for a long walk / To see the world in its prime / In the gentle warmth.",
+                "The wind is a dance / A graceful and a lovely move / A beautiful sight.",
+                "A time for new dreams / The world is a blank canvas / Ready for your art.",
+                "The smell of the rain / Is a clean and a fresh scent / A welcome new smell.",
+                "The world is a symphony / Of the birds and of the bees / A beautiful sound.",
+                "The sky is a bright / And a very happy blue / A joyful new sight.",
+                "A sense of pure joy / In the warm and pleasant air / A perfect new day.",
+                "The world is a story / A beautiful, happy story / Told by the new spring.",
+                "The sun is a good friend / A warm and a welcome friend / On this lovely day.",
+                "A day to be free / To run and to play and to laugh / And to feel the joy."
+            ],
+            13: [
+                "A mild, gentle day / The sun is a warm, soft blanket / On the happy world.",
+                "The air is so calm / A perfect day to just be / And to feel the peace.",
+                "A day for a short sleeve / The first real taste of the warmth / Of the coming summer.",
+                "The world is a soft / And a very gentle green / A calming new sight.",
+                "The trees are a whisper / Their leaves are a gentle sound / In the soft, warm breeze.",
+                "A day for a daydream / To lie in the grass and watch / The clouds drifting by.",
+                "The wind is a soft / And a very gentle sigh / A peaceful new sound.",
+                "A time for new thoughts / The world is a quiet space / For you to just think.",
+                "The smell of the grass / Is a sweet and a fresh scent / A sign of the spring.",
+                "The world is a lullaby / A soft and a gentle song / A peaceful new sound.",
+                "The sky is a pale / And a very gentle blue / A peaceful new sight.",
+                "A sense of pure calm / In the mild and gentle air / A perfect new day.",
+                "The world is a painting / A beautiful, soft painting / Made by the new spring.",
+                "The sun is a soft light / A gentle and a warm light / On this lovely day.",
+                "A day to be quiet / To listen and to just be / And to feel the peace."
+            ],
+            14: [
+                "A mild, pleasant day / The world is a comfortable / And a happy place.",
+                "The air is so sweet / It feels good to be outside / And to enjoy life.",
+                "A day for a sundress / The first real sign of the warmth / Of the summer days.",
+                "The world is a bright / And a very vibrant green / A beautiful sight.",
+                "The trees are a chorus / Their leaves are a happy sound / In the gentle breeze.",
+                "A day for a new book / To read in the park and feel / The sun on your skin.",
+                "The wind is a laugh / A happy and a joyful sound / A cheerful new sound.",
+                "A time for new friends / The world is a friendly place / For you to explore.",
+                "The smell of the flowers / Is a sweet and a lovely scent / A gift from the spring.",
+                "The world is a party / Of the bees and butterflies / A joyful new sight.",
+                "The sky is a bright / And a very happy blue / A joyful new sight.",
+                "A sense of pure fun / In the mild and pleasant air / A perfect new day.",
+                "The world is a celebration / A beautiful, happy one / Of the new season.",
+                "The sun is an invitation / To come out and to enjoy / The beautiful day.",
+                "A day to be social / To laugh and to talk and to share / The joy of the day."
+            ],
+            15: [
+                "A perfect spring day / The air is warm, the breeze is cool / A beautiful blend.",
+                "The world is alive / With the energy of spring / A vibrant new day.",
+                "A day for a new path / To explore and to discover / The beauty around.",
+                "The world is a canvas / Painted with the brightest greens / And the softest blues.",
+                "The trees are a shelter / A welcome and a cool place / To rest from the sun.",
+                "A day for a new song / To sing to the world and share / Your own happiness.",
+                "The wind is a partner / A playful and a fun friend / To dance with today.",
+                "A time for new growth / The world is a fertile ground / For your own new seeds.",
+                "The smell of the spring / Is a promise of the good / And the warm to come.",
+                "The world is a playground / A place to have fun and to be / A happy, free child.",
+                "The sky is a mirror / Reflecting the happy green / Of the world below.",
+                "A sense of pure bliss / In the warm and perfect air / A wonderful day.",
+                "The world is a treasure / A beautiful, precious gift / To enjoy today.",
+                "The sun is a golden / And a very welcome light / On this perfect day.",
+                "A day to be hopeful / To dream and to plan and to make / Your own new future."
+            ],
+            16: [
+                "A gentle, warm day / The sun is a friendly face / Smiling from the sky.",
+                "The air is so soft / It feels like a gentle hug / From the world itself.",
+                "A day for no jacket / To feel the warmth on your arms / A freeing new feel.",
+                "The world is a bright / And a very happy place / Full of life and joy.",
+                "The trees are a comfort / A cool and a shady spot / To sit and to read.",
+                "A day for a slow walk / To savor the gentle warmth / Of the afternoon.",
+                "The wind is a soft tune / A gentle and a happy song / A peaceful new sound.",
+                "A time for new hobbies / The world is a friendly guide / To show you the way.",
+                "The smell of the earth / Is a warm and a friendly scent / A sign of the summer.",
+                "The world is a family / Of the creatures big and small / Living in the sun.",
+                "The sky is a soft / And a very gentle blue / A peaceful new sight.",
+                "A sense of pure comfort / In the warm and gentle air / A perfect new day.",
+                "The world is a home / A beautiful, welcome home / To all living things.",
+                "The sun is a good host / Welcoming all to its warmth / A generous friend.",
+                "A day to be peaceful / To relax and to just be / And to feel the calm."
+            ],
+            17: [
+                "A warm, pleasant day / The sun is a golden coin / In a clear blue sky.",
+                "The air is so still / A perfect day for a nap / In a shady spot.",
+                "A day for a new hat / To shield your eyes from the sun / And to look so cool.",
+                "The world is a vibrant / And a very lively green / A beautiful sight.",
+                "The trees are a cool room / A natural, shady space / To escape the heat.",
+                "A day for a cool drink / To sit on the porch and watch / The world go on by.",
+                "The wind is a slow dance / A gentle and a lazy move / A peaceful new sight.",
+                "A time for new stories / The world is a good storyteller / If you just listen.",
+                "The smell of the summer / Is a warm and a lazy scent / A sign of the heat.",
+                "The world is a slow song / A gentle and a lazy tune / A peaceful new sound.",
+                "The sky is a deep / And a very calming blue / A peaceful new sight.",
+                "A sense of pure ease / In the warm and pleasant air / A perfect new day.",
+                "The world is a hammock / A comfortable, lazy place / To rest and to dream.",
+                "The sun is a slow friend / A warm and a lazy friend / On this lovely day.",
+                "A day to be lazy / To do nothing and to just / Enjoy the warm day."
+            ],
+            18: [
+                "A truly warm day / The first real feeling of summer / Is in the warm air.",
+                "The air is alive / With the hum of happy bees / And the song of birds.",
+                "A day for sandals / To let your feet feel the air / A freeing new feel.",
+                "The world is a lush / And a very vibrant green / A beautiful sight.",
+                "The trees are a cool drink / A refreshing, shady place / To escape the sun.",
+                "A day for a new adventure / To explore a new, cool path / In the shady woods.",
+                "The wind is a fun game / A playful and a happy game / To play with today.",
+                "A time for new skills / The world is a good teacher / If you want to learn.",
+                "The smell of the barbecue / Is a happy, smoky scent / A sign of the summer.",
+                "The world is a funfair / A happy and a joyful place / To be on this day.",
+                "The sky is a bright / And a very happy blue / A joyful new sight.",
+                "A sense of pure joy / In the warm and happy air / A perfect new day.",
+                "The world is a festival / A beautiful, happy one / Of the summer days.",
+                "The sun is a good friend / A warm and a happy friend / On this lovely day.",
+                "A day to be happy / To laugh and to play and to share / The joy of the day."
+            ],
+            19: [
+                "A warm, perfect day / The sun is a golden blessing / On the happy world.",
+                "The air is so sweet / With the scent of summer flowers / A fragrant new day.",
+                "A day for a new dress / To feel the warm breeze on your skin / A lovely new feel.",
+                "The world is a masterpiece / A beautiful, vibrant work / Of the summer sun.",
+                "The trees are a cool haven / A peaceful and a shady place / To rest and to read.",
+                "A day for a new recipe / To cook with the fresh produce / Of the summer days.",
+                "The wind is a soft kiss / A gentle and a warm touch / On your happy face.",
+                "A time for new music / The world is a happy song / To sing along to.",
+                "The smell of the ocean / Is a salty, fresh new scent / A sign of the beach.",
+                "The world is a holiday / A happy and a relaxing / And a fun new day.",
+                "The sky is a vast / And a very beautiful blue / A breathtaking sight.",
+                "A sense of pure bliss / In the warm and perfect air / A wonderful day.",
+                "The world is a treasure / A beautiful, precious gift / To cherish today.",
+                "The sun is a warm smile / A happy and a friendly smile / On this perfect day.",
+                "A day to be grateful / For the beauty and the joy / Of this lovely day."
+            ],
+            20: [
+                "The perfect warm day / Not too hot and not too cool / A golden balance.",
+                "Long, lazy sunbeams / Stretch across the warm green grass / Afternoon delight.",
+                "A soft, gentle breeze / Carries scents of summer blooms / A fragrant whisper.",
+                "The hum of the world / A low and a constant sound / Of life in the sun.",
+                "Barefoot on the path / The warm earth beneath your feet / A simple pleasure.",
+                "A day for a picnic / Laughter echoes in the park / Underneath blue skies.",
+                "The shade of a tree / A welcome and a cool green room / A gift from the sun.",
+                "The world seems to slow / In the comfortable warm air / A moment of peace.",
+                "A cold glass of lemonade / Sweats upon the wooden porch / A sweet, sharp relief.",
+                "The first of the fireflies / A tiny, green, blinking star / In the coming dusk.",
+                "Long shadows extend / As the sun begins its slow / Descent to the west.",
+                "The sound of the ice cream truck / A happy and a hopeful tune / In the warm, still air.",
+                "A day to do nothing / And to do it very well / A lazy pleasure.",
+                "The sky is a soft / And a very peaceful blue / A perfect canvas.",
+                "The warmth on your skin / A gentle and a loving touch / From the summer sun."
+            ],
+            21: [
+                "A true summer day / The sun is a warm, good friend / High in the blue sky.",
+                "The air is so soft / It feels like a velvet cloak / On your happy skin.",
+                "A day for light clothes / To feel the warmth on your body / A freeing new feel.",
+                "The world is a lush / And a very verdant green / A beautiful sight.",
+                "The trees are a cool spot / A refreshing, shady place / To escape the sun.",
+                "A day for a new game / To play in the park and feel / The joy of the sun.",
+                "The wind is a fun friend / A playful and a happy friend / To play with today.",
+                "A time for new hobbies / The world is a fun new place / To learn and to grow.",
+                "The smell of the cut grass / Is a fresh and a green scent / A sign of the summer.",
+                "The world is a happy place / Full of laughter and of joy / On this lovely day.",
+                "The sky is a bright / And a very happy blue / A joyful new sight.",
+                "A sense of pure fun / In the warm and happy air / A perfect new day.",
+                "The world is a carnival / A beautiful, happy one / Of the summer days.",
+                "The sun is a good host / Welcoming all to its warmth / A generous new friend.",
+                "A day to be playful / To run and to jump and to laugh / And to feel the joy."
+            ],
+            22: [
+                "A warm, golden day / The sun is a friendly giant / In the summer sky.",
+                "The air is alive / With the sound of happy kids / Playing in the street.",
+                "A day for a new hat / A wide-brimmed and a straw one / To keep off the sun.",
+                "The world is a jungle / A lush and a vibrant green / A beautiful sight.",
+                "The trees are a cool cave / A natural, shady space / To hide from the heat.",
+                "A day for a cool swim / To splash in the clear, blue water / A perfect relief.",
+                "The wind is a slow fan / A gentle and a lazy breeze / A welcome new friend.",
+                "A time for new books / The world is a good library / Full of new stories.",
+                "The smell of the sunscreen / Is a happy, summery scent / A sign of the fun.",
+                "The world is a fun day / A happy and a joyful one / To enjoy today.",
+                "The sky is a deep / And a very beautiful blue / A breathtaking sight.",
+                "A sense of pure bliss / In the warm and golden air / A wonderful day.",
+                "The world is a treasure / A beautiful, precious gift / To enjoy today.",
+                "The sun is a good guide / Showing the way to the fun / On this lovely day.",
+                "A day to be happy / To smile and to feel the joy / Of this perfect day."
+            ],
+            23: [
+                "A warm, lazy day / The sun is a slow, old friend / In the summer sky.",
+                "The air is so still / It feels like the world has paused / To enjoy the warmth.",
+                "A day for a new drink / A tall and a frosty one / To sip in the shade.",
+                "The world is a soft / And a very sleepy green / A calming new sight.",
+                "The trees are a cool bed / A natural, shady place / To rest and to nap.",
+                "A day for a slow meal / To eat on the porch and watch / The sun go on down.",
+                "The wind is a slow breath / A gentle and a lazy sigh / A peaceful new sound.",
+                "A time for new thoughts / The world is a quiet space / To dream and to plan.",
+                "The smell of the night flowers / Is a sweet and a heady scent / A gift from the dark.",
+                "The world is a slow dance / A gentle and a lazy move / A peaceful new sight.",
+                "The sky is a soft / And a very beautiful purple / As the day does end.",
+                "A sense of pure peace / In the warm and lazy air / A perfect new day.",
+                "The world is a hammock / A comfortable, lazy place / To swing and to dream.",
+                "The sun is a slow wave / A warm and a lazy goodbye / To this lovely day.",
+                "A day to be slow / To move and to think and to be / At a slower pace."
+            ],
+            24: [
+                "A warm, sunny day / The world is a bright, happy place / Full of life and fun.",
+                "The air is so clear / You can see for miles and miles / From a high, green hill.",
+                "A day for a new trip / To go to the beach and feel / The sand on your feet.",
+                "The world is a bright / And a very vibrant place / A beautiful sight.",
+                "The trees are a cool spot / A perfect and a shady place / To eat your ice cream.",
+                "A day for a new sport / To play in the sun and feel / The joy of the game.",
+                "The wind is a fun friend / A playful and a happy friend / To chase in the park.",
+                "A time for new friends / The world is a friendly place / To meet and to share.",
+                "The smell of the salty air / Is a fresh and a clean scent / A sign of the sea.",
+                "The world is a fun park / A happy and a joyful place / To be on this day.",
+                "The sky is a brilliant / And a very happy blue / A joyful new sight.",
+                "A sense of pure joy / In the warm and sunny air / A perfect new day.",
+                "The world is a postcard / A beautiful, happy one / From the summer days.",
+                "The sun is a good coach / Cheering you on as you play / On this lovely day.",
+                "A day to be active / To run and to jump and to play / And to feel the fun."
+            ],
+            25: [
+                "A quarter-century / Of warmth in the summer air / A perfect comfort.",
+                "The sun's golden rays / Make the world a brighter place / A beautiful sight.",
+                "A day for bare shoulders / To feel the sun's gentle kiss / A lovely new feel.",
+                "The world is a garden / In full and glorious bloom / A fragrant new day.",
+                "The trees are a cool drink / A refreshing, shady place / To quench your sun-thirst.",
+                "A day for a new song / A happy and a catchy tune / To hum all day long.",
+                "The wind is a soft dance / A gentle and a graceful move / A beautiful sight.",
+                "A time for new passions / The world is a friendly guide / To show you new ways.",
+                "The smell of the ripe fruit / Is a sweet and a juicy scent / A sign of the summer.",
+                "The world is a happy place / Full of laughter and of smiles / On this lovely day.",
+                "The sky is a soft / And a very peaceful blue / A calming new sight.",
+                "A sense of pure bliss / In the warm and perfect air / A wonderful day.",
+                "The world is a fine wine / A beautiful, perfect blend / Of sun and of air.",
+                "The sun is a good friend / A warm and a faithful friend / On this lovely day.",
+                "A day to be grateful / For the warmth and for the light / And the happy day."
+            ],
+            26: [
+                "A warm, happy day / The world is a cheerful place / Full of sun and fun.",
+                "The air is so bright / It feels like the world is new / And full of promise.",
+                "A day for a new hat / A colorful, floppy one / To wear with a smile.",
+                "The world is a bright / And a very joyful green / A beautiful sight.",
+                "The trees are a cool spot / A perfect and a shady place / To share a secret.",
+                "A day for a new game / To play with your friends and laugh / Until your sides hurt.",
+                "The wind is a fun tease / A playful and a happy tease / To mess up your hair.",
+                "A time for new jokes / The world is a funny place / If you look for laughs.",
+                "The smell of the flowers / Is a sweet and a happy scent / A gift from the sun.",
+                "The world is a playground / A happy and a joyful place / To be a big kid.",
+                "The sky is a brilliant / And a very happy blue / A joyful new sight.",
+                "A sense of pure fun / In the warm and happy air / A perfect new day.",
+                "The world is a comedy / A beautiful, happy one / To enjoy today.",
+                "The sun is a good sport / Playing along with your games / On this lovely day.",
+                "A day to be silly / To laugh and to play and to be / A happy, free soul."
+            ],
+            27: [
+                "The first touch of heat / A warmth that has a new weight / Summer's deeper breath.",
+                "A slow, hazy sun / Shines through a thin veil of white / The air starts to press.",
+                "Shade is now a prize / A cool and a welcome dark place / A treasured refuge.",
+                "The drone of the cicadas / Begins its low, steady hum / The song of the heat.",
+                "A cold drink is best / Ice cubes clinking in the glass / A sweet, welcome sound.",
+                "The world starts to slow / A languid and a heavy pace / In the growing heat.",
+                "The air has a shimmer / A faint, watery mirage / On the distant road.",
+                "A time to be still / To conserve your energy / And to wait for dusk.",
+                "The smell of the hot dust / Rises from the thirsty ground / A dry, earthy scent.",
+                "The birds are now quiet / Hiding in the shady leaves / Escaping the sun.",
+                "The sky is a pale / And a very washed-out blue / A sign of the heat.",
+                "A sense of waiting / The world is holding its breath / For the coming night.",
+                "The cat finds a cool spot / On the tiles in the kitchen / A smart, furry friend.",
+                "The sun is no longer / A gentle and a soft friend / But a strong, hot force.",
+                "A day to be patient / To wait for the cool of night / And the evening breeze."
+            ],
+            28: [
+                "A hot, heavy day / The sun is a strong, hot hand / On the weary world.",
+                "The air is so thick / It feels like you're walking through / A warm, heavy soup.",
+                "A day for a cool bath / To wash away all the heat / And the sticky sweat.",
+                "The world is a deep / And a very tired green / A sleepy new sight.",
+                "The trees are a cool sigh / A natural, shady place / To rest and to breathe.",
+                "A day for a slow fan / To feel the air move and dream / Of a cooler place.",
+                "The wind is a hot breath / A heavy and a lazy sigh / A warm, sleepy sound.",
+                "A time for old memories / The world is a quiet space / To think and to dream.",
+                "The smell of the hot tar / Is a strong and a heavy scent / A sign of the heat.",
+                "The world is a slow dream / A hazy and a lazy dream / On this hot, still day.",
+                "The sky is a hazy / And a very sleepy white / A tired new sight.",
+                "A sense of pure lethargy / In the hot and heavy air / A sleepy new day.",
+                "The world is a warm bed / A comfortable, lazy place / To lie and to rest.",
+                "The sun is a slow drum / A heavy and a steady beat / On this hot, still day.",
+                "A day to be slow / To move and to think and to be / In a lazy haze."
+            ],
+            29: [
+                "A hot, summer day / The sun is a fiery eye / In the cloudless sky.",
+                "The air is so hot / It feels like a dragon's breath / On your weary face.",
+                "A day for the indoors / Where the air is cool and still / A welcome escape.",
+                "The world is a bright / And a very intense green / A dazzling new sight.",
+                "The trees are a cool shield / A natural, shady fort / To hide from the sun.",
+                "A day for a new plan / To find a cool, dark movie / And to stay inside.",
+                "The wind is a hot gust / A sudden and a fiery blast / A surprising heat.",
+                "A time for a new book / The world is a quiet place / To read and to rest.",
+                "The smell of the hot stone / Is a dry and a dusty scent / A sign of the heat.",
+                "The world is a hot stove / A fiery and a burning place / To be on this day.",
+                "The sky is a brilliant / And a very intense blue / A dazzling new sight.",
+                "A sense of pure heat / In the hot and fiery air / A burning new day.",
+                "The world is a desert / A hot and a thirsty place / On this summer day.",
+                "The sun is a hot flame / A bright and a fiery one / On this burning day.",
+                "A day to be cool / To stay in the shade and to drink / A lot of cold water."
+            ],
+            30: [
+                "Thirty degrees hot / The sun's reign is absolute / In the summer sky.",
+                "The world is now baked / The green grass begins to fade / To a dusty gold.",
+                "Air conditioners hum / A modern and a welcome song / A mechanical breeze.",
+                "The heat radiates / From the asphalt and the stone / A city's deep warmth.",
+                "A slow, heavy stillness / The world seems to be on pause / Underneath the heat.",
+                "The shade is a blessing / A small and a cool island / In a sea of heat.",
+                "The wind, when it blows / Is a hot and a dry surprise / No relief to find.",
+                "A day to move slowly / To walk and to think and to be / With a gentle pace.",
+                "The taste of cold melon / A sweet and a watery joy / A perfect relief.",
+                "The cicadas' song / Is a loud and a constant drill / The anthem of heat.",
+                "The sky is a vast / And a very empty blue / A hot, lonely space.",
+                "The world is now thirsty / The soil is cracked and so dry / Waiting for the rain.",
+                "A time to be patient / The heat will not last for long / The cool will return.",
+                "The sun is a hammer / A heavy and a pounding force / On the weary land.",
+                "The night brings no comfort / The heat of the day remains / Trapped in the dark earth."
+            ],
+            31: [
+                "A deep, heavy heat / The sun is a golden furnace / In the summer sky.",
+                "The air is so thick / It feels like you're breathing in / A warm, heavy blanket.",
+                "A day for a cold shower / To feel the cool water run / And to feel refreshed.",
+                "The world is a deep / And a very sun-bleached green / A faded new sight.",
+                "The trees are a cool dream / A natural, shady place / To escape the heat.",
+                "A day for a new movie / A cool and a dark escape / From the hot, bright world.",
+                "The wind is a hot sigh / A heavy and a lazy sigh / A warm, sleepy sound.",
+                "A time for a new thought / The world is a quiet space / To dream of the cold.",
+                "The smell of the dry earth / Is a dusty and a thirsty scent / A sign of the heat.",
+                "The world is a warm bath / A heavy and a lazy one / On this hot, still day.",
+                "The sky is a hazy / And a very pale, white-blue / A tired new sight.",
+                "A sense of pure stillness / In the hot and heavy air / A sleepy new day.",
+                "The world is a warm room / A comfortable, lazy place / To sit and to wait.",
+                "The sun is a slow fire / A heavy and a steady one / On this hot, still day.",
+                "A day to be still / To sit and to wait and to hope / For a cooling breeze."
+            ],
+            32: [
+                "A very hot day / The sun is a giant's eye / Staring from the sky.",
+                "The air is so still / The world is a photograph / In the burning light.",
+                "A day for the basement / The coolest and the darkest / And the best of rooms.",
+                "The world is a parched / And a very thirsty land / Awaiting the rain.",
+                "The trees are a still life / Their leaves do not move or dance / In the heavy air.",
+                "A day for a new hope / A hope for a cloud to come / And to bring some shade.",
+                "The wind is a memory / A forgotten, distant friend / On this hot, still day.",
+                "A time for a new prayer / A prayer for a drop of rain / To cool the hot earth.",
+                "The smell of the hot dust / Is a dry and a choking scent / A sign of the drought.",
+                "The world is a hot plate / A sizzling and a burning place / To be on this day.",
+                "The sky is a blank / And a very empty blue / A hot, empty space.",
+                "A sense of pure waiting / The world is holding its breath / For a drop of rain.",
+                "The world is a hot stone / A burning and a heavy one / In the summer sun.",
+                "The sun is a tyrant / A powerful, hot ruler / Of this thirsty land.",
+                "A day to be patient / To wait for the rain to come / And to cool the world."
+            ],
+            33: [
+                "A truly hot day / The sun is a powerful / And a mighty king.",
+                "The air is so hot / It shimmers above the ground / A watery illusion.",
+                "A day for a new plan / A plan to do nothing at all / And to stay so cool.",
+                "The world is a bright / And a very intense place / A dazzling new sight.",
+                "The trees are a cool fort / A natural, shady place / To hide from the king.",
+                "A day for a new drink / A tall and an icy one / To sip very slow.",
+                "The wind is a hot lie / A promise of coolness that / Is never fulfilled.",
+                "A time for a new dream / A dream of a cool, green forest / And a gentle rain.",
+                "The smell of the hot world / Is a dry and a dusty scent / A sign of the heat.",
+                "The world is a hot-house / A steamy and a burning place / To be on this day.",
+                "The sky is a bright / And a very empty blue / A hot, empty space.",
+                "A sense of pure heat / In the hot and fiery air / A burning new day.",
+                "The world is a hot pan / A sizzling and a burning one / In the summer sun.",
+                "The sun is a strong god / A powerful, hot new god / Of this summer day.",
+                "A day to be smart / To stay in the shade and to drink / A lot of cold water."
+            ],
+            34: [
+                "A brutal, hot day / The sun is a cruel master / In the summer sky.",
+                "The air is so heavy / It feels like a leaden cloak / On your weary back.",
+                "A day for a dark room / With the curtains all pulled tight / To keep out the light.",
+                "The world is a baked / And a very weary land / Crying for the rain.",
+                "The trees are a prayer / A silent and a still prayer / For a drop of rain.",
+                "A day for a new hope / A hope that the night will bring / A cool, gentle breeze.",
+                "The wind is a cruel joke / A hot and a dusty joke / On this thirsty day.",
+                "A time for a new thought / A thought of a cool, green river / And a shady bank.",
+                "The smell of the hot world / Is a sad and a dusty scent / A sign of the drought.",
+                "The world is a hot brick / A burning and a heavy one / In the summer sun.",
+                "The sky is a pale / And a very weary blue / A tired new sight.",
+                "A sense of pure waiting / The world is holding its breath / For a sign of rain.",
+                "The world is a hot tear / A silent and a salty one / On the cheek of earth.",
+                "The sun is a hot stone / A heavy and a burning one / On the back of earth.",
+                "A day to be patient / To wait for the dark to come / And to bring some hope."
+            ],
+            35: [
+                "A searing, hot day / The world is a shimmering, / A hot, hazy dream.",
+                "The sun is a furnace / A blazing and a white-hot / And a fiery heart.",
+                "The air is a solid / And a very heavy thing / That you have to push.",
+                "The shade is a ghost / A fleeting and a pale thing / That gives no relief.",
+                "The world is on fire / A silent and a slow burn / In the summer heat.",
+                "The only sound is / The buzzing of a lone fly / In the heavy air.",
+                "The world is a mirage / A watery, shimmery thing / On the hot, dry road.",
+                "A day to be inside / In the cool and in the dark / And to wait it out.",
+                "The water is warm / It gives no relief at all / From the burning heat.",
+                "The plants are all wilting / Their green leaves are turning brown / In the scorching sun.",
+                "The sky is a white / And a very empty glare / A blinding new sight.",
+                "The world is a hot breath / A dry and a dusty one / From a desert god.",
+                "The earth is a hot plate / Sizzling in the summer sun / A dangerous place.",
+                "The sun is a laser / A burning and a cutting / And a focused beam.",
+                "The night brings no coolness / The stones of the earth hold on / To the day's hot rage."
+            ],
+            36: [
+                "A blistering heat / The air itself seems to burn / A day to endure.",
+                "The sun is a dragon / Breathing fire on the land / From its high, white perch.",
+                "The world is a dry leaf / Curling at the very edges / In the scorching heat.",
+                "The shadows are short / And they offer no escape / From the sun's hot gaze.",
+                "A deep, heavy silence / The world is too hot to move / Or to make a sound.",
+                "The asphalt is soft / You can see your footprint there / A mark of the heat.",
+                "The birds are all gone / They have found a cooler place / Far away from here.",
+                "The world is a fever / A hot and a dizzying / And a heavy state.",
+                "The wind is a hot iron / Pressing on your weary skin / A burning new feel.",
+                "The world is a hot coal / Glowing in the summer sun / A dangerous thing.",
+                "The sky is a bright / And a very painful white / A dazzling new sight.",
+                "The world is a hot room / With no windows and no doors / And no way to leave.",
+                "The earth is a hot pan / Sizzling with a silent hiss / In the summer sun.",
+                "The sun is a mad god / Laughing at the thirsty world / From its fiery throne.",
+                "A day to be still / To wait for the sun to set / And to pray for rain."
+            ],
+            37: [
+                "An oppressive heat / The world is a heavy weight / On your weary soul.",
+                "The sun is a judgment / A harsh and a fiery one / From a cloudless sky.",
+                "The air is a hot wall / You can feel it push you back / As you try to move.",
+                "The world is a parched throat / Crying for a single drop / Of the cooling rain.",
+                "The trees are all drooping / Their leaves are all limp and sad / In the heavy heat.",
+                "A day to be inside / In the cool and in the dark / And to dream of ice.",
+                "The water is boiling / It offers no comfort now / From the burning heat.",
+                "The world is a sad song / A slow and a mournful tune / Of the summer heat.",
+                "The wind is a hot curse / A dry and a dusty one / On this thirsty day.",
+                "The world is a hot tear / A silent and a salty one / On the face of earth.",
+                "The sky is a blank page / A white and a burning one / A terrifying sight.",
+                "The world is a hot breath / A fiery and a deadly one / From a sleeping beast.",
+                "The earth is a hot stone / A burning and a heavy one / In the summer sun.",
+                "The sun is a hot eye / A watchful and a cruel one / Staring from the sky.",
+                "The night brings no solace / The heat of the day remains / A heavy, hot ghost."
+            ],
+            38: [
+                "A relentless heat / The world is a furnace door / Open to the sun.",
+                "The sun is a hot brand / Searing the skin of the earth / A mark of its power.",
+                "The air is a thick soup / A hot and a heavy one / That is hard to breathe.",
+                "The world is a dry bone / Bleaching in the summer sun / A stark, empty sight.",
+                "The trees are all skeletons / Their leaves are all brown and dead / In the burning heat.",
+                "A day to be still / To lie in a dark, cool room / And to wait for change.",
+                "The water is a hot lie / A promise of coolness that / Is broken at once.",
+                "The world is a hot ache / A dull and a constant one / In the heart of summer.",
+                "The wind is a hot knife / A sharp and a cutting one / In the heavy air.",
+                "The world is a hot desert / A vast and a thirsty place / With no end in sight.",
+                "The sky is a hot mirror / Reflecting the burning sun / A blinding new sight.",
+                "The world is a hot cage / A burning and a small one / With no way to leave.",
+                "The earth is a hot coal / Glowing with a silent rage / In the summer sun.",
+                "The sun is a mad king / Ruling a burning kingdom / With a fiery hand.",
+                "A day to endure / To wait for the sun to die / And for cool to come."
+            ],
+            39: [
+                "A punishing heat / The world is a fever dream / A hot, blurry place.",
+                "The sun is a hot nail / Driven into the blue sky / A point of pure pain.",
+                "The air is a hot poison / It burns as you breathe it in / A deadly new feel.",
+                "The world is a cracked lip / Thirsty for a drop of rain / A painful new sight.",
+                "The trees are all begging / Their branches are reaching up / To an empty sky.",
+                "A day to be inside / In the cool and in the dark / And to feel so small.",
+                "The water is a hot bath / It offers no comfort now / From the burning heat.",
+                "The world is a hot sigh / A final and a weary one / From the dying earth.",
+                "The wind is a hot ghost / A dry and a dusty one / Haunting the hot streets.",
+                "The world is a hot tear / A single and a salty one / On the cheek of earth.",
+                "The sky is a hot wound / A burning and a gaping one / In the summer sky.",
+                "The world is a hot prison / A burning and a small one / With no hope of leave.",
+                "The earth is a hot ember / Glowing with a dying light / In the summer sun.",
+                "The sun is a mad eye / Staring at a burning world / With a cruel delight.",
+                "A day to surrender / To the power of the heat / And to wait for night."
+            ],
+            40: [
+                "The world is on fire / A scorching and a breathless heat / The peak of the sun.",
+                "A temperature extreme / The air itself is a flame / A day of pure heat.",
+                "The sun is a white hole / A burning and a silent void / In the summer sky.",
+                "The world is a dry river / Its memory of water / Is a dusty ghost.",
+                "The shadows have vanished / There is nowhere left to hide / From the sun's hot rage.",
+                "The world is a hot mirror / Reflecting the burning glare / A blinding new sight.",
+                "The air is a hot razor / A sharp and a cutting thing / That hurts as you breathe.",
+                "The world is a hot prayer / A silent and a desperate one / For a single cloud.",
+                "The wind is a hot memory / A forgotten, distant dream / Of a cooler time.",
+                "The world is a hot stone / A heavy and a burning one / In the hand of god.",
+                "The sky is a hot desert / A vast and an empty place / With no sign of life.",
+                "The world is a hot furnace / A burning and a raging one / With no way to stop.",
+                "The earth is a hot coal / Burning with a final, bright / And a silent rage.",
+                "The sun is a pure power / A final and a total one / Over all the world.",
+                "A day of pure stillness / The world has surrendered now / To the mighty sun."
+            ]
+        };
+        
+        // The rest of the JavaScript functions are unchanged and correct.
+        const messageArea = document.getElementById('message-area');
+        const mainContent = document.getElementById('main-content');
+        const dynamicMessage = document.getElementById('dynamic-message');
+        const tempMain = document.getElementById('temp-main');
+        const feelsLike = document.getElementById('feels-like');
+        const weatherDescription = document.getElementById('weather-description');
+        const historyContainer = document.getElementById('history');
+        const forecastContainer = document.getElementById('forecast');
+
+        document.addEventListener('DOMContentLoaded', () => checkGeolocationPermission());
+        
+        function updateUI(data) {
+            const { current, hourly } = data;
+            const urlParams = new URLSearchParams(window.location.search);
+            const testTempParam = urlParams.get('test_temp');
+            let tempForDisplay;
+            if (testTempParam !== null && !isNaN(testTempParam)) {
+                tempForDisplay = parseFloat(testTempParam);
+                console.log(`%c--- TEST MODE ---`, 'color: yellow; font-weight: bold;');
+                console.log(`Using test temperature for message and background: ${tempForDisplay}°C`);
+            } else {
+                tempForDisplay = current.temperature_2m;
+            }
+            updateMainWeather(current);
+            updateDynamicMessage(tempForDisplay);
+            updateBackground(tempForDisplay);
+            const currentTimeFromAPI = new Date(data.current.time);
+            const historyData = [], forecastData = [];
+            for (let i = 0; i < hourly.time.length; i++) { const entryTime = new Date(hourly.time[i]); const entry = { time: entryTime, temp: hourly.temperature_2m[i], weathercode: hourly.weather_code[i] }; if (entryTime < currentTimeFromAPI) { historyData.push(entry); } else { forecastData.push(entry); } }
+            updateHistory(historyData);
+            updateForecast(forecastData.slice(1));
+            messageArea.style.display = 'none';
+            mainContent.style.display = 'grid';
+        }
+        
+        function updateDynamicMessage(temp) {
+            let tempKey = Math.round(temp);
+            if (tempKey < 0) tempKey = 0;
+            if (tempKey > 40) tempKey = 40;
+            const haikuList = temperatureMessages[tempKey];
+            if (!haikuList || haikuList.length === 0) { dynamicMessage.textContent = "A gentle breeze blows."; return; }
+            const randomIndex = Math.floor(Math.random() * haikuList.length);
+            const randomHaiku = haikuList[randomIndex];
+            const formattedHaiku = randomHaiku.replace(/ \/ /g, '<br>');
+            dynamicMessage.innerHTML = formattedHaiku;
+        }
+        
+        function checkGeolocationPermission() { if (navigator.permissions && navigator.permissions.query) { navigator.permissions.query({ name: 'geolocation' }).then(permissionStatus => { if (permissionStatus.state === 'granted') { requestLocation(); } else if (permissionStatus.state === 'prompt') { requestLocation(); } else { handlePermissionDenied(); } permissionStatus.onchange = () => { if (permissionStatus.state === 'granted') requestLocation(); }; }); } else { requestLocation(); } }
+        function requestLocation() { messageArea.textContent = "Requesting location..."; if (navigator.geolocation) { navigator.geolocation.getCurrentPosition((position) => fetchWeatherData(position.coords.latitude, position.coords.longitude), (error) => { if (error.code === error.PERMISSION_DENIED) { handlePermissionDenied(); } else { handleError(`Geolocation error: ${error.message}`); } }); } else { handleError("Geolocation is not supported by this browser."); } }
+        function handlePermissionDenied() { handleError("Location access was denied. To use this app, please enable location permissions for this site in your browser settings and refresh."); }
+        async function fetchWeatherData(lat, lon) { messageArea.textContent = 'Fetching weather data...'; const baseUrl = 'https://api.open-meteo.com/v1/forecast'; const params = new URLSearchParams({ latitude: lat, longitude: lon, current: 'temperature_2m,apparent_temperature,weather_code', hourly: 'temperature_2m,weather_code', past_hours: 5, forecast_hours: 24, timezone: 'auto' }); const apiUrl = `${baseUrl}?${params.toString()}`; try { const response = await fetch(apiUrl); const data = await response.json(); if (!response.ok || !data.current) { throw new Error(data.reason || "API response is missing the 'current' weather object."); } updateUI(data); } catch (error) { handleError(`Failed to process weather data. See console for details.`); console.error("Fetch Error:", error); } }
+        function updateMainWeather(current) { tempMain.textContent = `${Math.round(current.temperature_2m)}°C`; feelsLike.textContent = `Feels like ${Math.round(current.apparent_temperature)}°C`; weatherDescription.textContent = getWeatherDescription(current.weather_code); }
+        function updateBackground(temp) { const minTemp = 0, maxTemp = 35; const coldHue = 0, coldSaturation = 0, coldLightness = 20; const warmHue = 28, warmSaturation = 90, warmLightness = 40; const clampedTemp = Math.max(minTemp, Math.min(temp, maxTemp)); const percentage = (clampedTemp - minTemp) / (maxTemp - minTemp); const hue = coldHue + (warmHue - coldHue) * percentage; const saturation = coldSaturation + (warmSaturation - coldSaturation) * percentage; const lightness = coldLightness + (warmLightness - coldLightness) * percentage; document.body.style.backgroundColor = `hsl(${hue}, ${saturation}%, ${lightness}%)`; }
+        function updateHistory(historyData) { historyContainer.innerHTML = ''; historyData.forEach(hour => historyContainer.appendChild(createTimelineCard(hour))); }
+        function updateForecast(forecastData) { forecastContainer.innerHTML = ''; forecastData.forEach(hour => forecastContainer.appendChild(createTimelineCard(hour))); }
+        function createTimelineCard(hourData) { const card = document.createElement('div'); card.className = 'timeline-card'; const time = hourData.time.getHours().toString().padStart(2, '0') + ':00'; card.innerHTML = `<div class="time">${time}</div><div class="icon">${getWeatherEmoji(hourData.weathercode)}</div><div class="temp">${Math.round(hourData.temp)}°C</div>`; return card; }
+        function getWeatherDescription(code) { const descriptions = { 0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Depositing rime fog", 51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle", 61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain", 71: "Slight snow fall", 73: "Moderate snow fall", 75: "Heavy snow fall", 80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers", 95: "Thunderstorm" }; return descriptions[code] || "Unknown weather"; }
+        function getWeatherEmoji(code) { const emojis = { 0: '☀️', 1: '🌤️', 2: '⛅', 3: '☁️', 45: '☁️', 48: '☁️', 51: '💧', 53: '💧', 55: '💧', 61: '🌧️', 63: '🌧️', 65: '🌧️', 71: '❄️', 73: '❄️', 75: '❄️', 80: '🌦️', 81: '🌦️', 82: '🌦️', 95: '⛈️' }; return emojis[code] || '❓'; }
+        function handleError(message) { messageArea.textContent = message; messageArea.style.display = 'block'; mainContent.style.display = 'none'; }
+    </script>
+</body>
+</html>
